@@ -8,6 +8,7 @@ import sys
 
 from scipy.optimize import curve_fit
 from matplotlib.offsetbox import AnchoredText
+from numba import jit, njit
 
 from pybar.analysis import analysis as pyana
 from pybar.analysis.analyze_raw_data import AnalyzeRawData
@@ -511,6 +512,124 @@ def transform_to_emu_plane(input_file, table_name ,meta_data_file, output_file=N
             logging.info('New data file with %s tables written to %s'% (len(new_tables)+1 ,output_file_name))
     return output_file
 
+
+def open_hit_and_fixed_ts_file(input_file,meta_file):
+    with tb.open_file(input_file, mode="r") as in_file, tb.open_file(meta_file,mode='r') as meta_file:
+        sw = meta_file.root.meta_data[:]
+        hw = in_file.root.Hits[:]
+        
+        new_array = np.zeros(shape=(hw.shape[0],3))
+        logging.info('opening file %s' % input_file)
+        logging.info('number of hits is %s' % hw.shape[0] )
+    return sw, hw, new_array
+
+        
+@jit(nopython=True, parallel=True)
+def assign_hw_timestamp(sw,hw,new_array):
+
+    plot_data = new_array
+    
+    j = 0
+      
+    for i in range(0, sw.shape[0]-1):
+        for j in range(0, hw.shape[0]):
+            if sw[i]['event_number'] <= hw[j]['event_number']:
+#                 plot_data.append([sw[i]['timestamp_start'],hw[b]['trigger_time_stamp'],sw[i]['event_number'], hw[b]['event_number']])
+                plot_data[j][0] = sw[i]['timestamp_stop']
+                plot_data[j][1] = hw[j]['trigger_time_stamp']
+                plot_data[j][2] = sw[i]['event_number']
+                plot_data[j][3] = hw[j]['event_number']
+                
+    plot_data[:,0] = plot_data[:,0] - plot_data[:,0][0]
+    plot_data[:,1] = plot_data[:,1] *25 / 1e9
+        
+    return plot_data
+
+
+
+def assign_hw_timestamp_corr(sw, hw):
+
+    result = np.zeros(shape=(4, hw.shape[0]))
+    
+    j = 0
+      
+    for i in range(1, sw.shape[0]-1):
+        try:
+            while sw[i]['event_number'] >= hw[j]['event_number']:
+                result[0][j] = sw[i - 1]['timestamp_start'] + (sw[i - 1]['timestamp_start']- sw[i - 1]['timestamp_stop']) / 2.
+                result[1][j] = hw[j]['trigger_time_stamp']
+                result[2][j] = sw[i - 1]['event_number']
+                result[3][j] = hw[j]['event_number']
+                j += 1
+        except IndexError:
+            break
+        
+    return result
+
+def plot_xy(x,y,title,xlabel, ylabel,xrange,yrange,output_file = None):
+
+    n_hits = len(y)
+    plt.clf()
+    plt.title(title)
+    plt.grid()
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+#     plt.xlim(xrange)
+#     plt.ylim(yrange)
+    plt.plot(x, y,label = 'number of hits = %r' % n_hits ,linestyle = 'None', marker='o', markersize = 1.5)
+
+    plt.legend()
+    if not output_file:
+        plt.show()
+    else:
+        plt.savefig(output_file)
+
+
+def plot_hw_vs_sw_timestamps(input_file,meta_file):
+    
+    output_file = None #input_file[:-3] + '_sw_vs_hw_timestamp.pdf'
+    sw, hw, new_array = open_hit_and_fixed_ts_file(input_file,meta_file)
+    
+    title = 'Run_' + os.path.split(input_file)[1][:11] + ' software vs. hardware timestamp'
+    
+    
+    
+#     plot_xy(assign_hw_timestamp(sw,hw,new_array)[:,0],
+#             assign_hw_timestamp(sw,hw,new_array)[:,1],
+#             title = title, xlabel = 'software ts [s]',
+#             ylabel = 'hardware ts [s]', 
+#             xrange = (0,100),yrange=(0,12),
+#             output_file = output_file)
+#     
+    
+    result = assign_hw_timestamp_corr(sw, hw)
+#     print result[0]
+#     raise
+#     plot_data[:,0] = plot_data[:,0] - plot_data[:,0][0]
+#     plot_data[:,1] = plot_data[:,1] *25 / 1e9
+
+    result[0] -= (result[0][0] + 50.)
+    result[1] *= 25e-9
+    plt.plot(result[0], result[1], '.')
+    
+    sel = np.logical_and(result[0] > 1, result[0] < 6)
+    x, y = result[0][sel], result[1][sel]
+    xp = np.linspace(plt.xlim()[0], plt.xlim()[1], 1000)
+    
+    par = np.polyfit(x, y, 1)
+    yf = np.poly1d(par)
+    
+    print par[0]
+    print np.all(np.diff(result[1]) >= 0)
+    print np.where(np.diff(result[1]) == 0)
+    
+    plt.plot(xp, yf(xp))
+    
+    plt.plot(xp,xp)
+    plt.grid()
+    plt.show()
+   
+    
 if __name__ == "__main__":
 
     n_cluster_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/files_vadim/75_module_2_ext_trigger_scan',
@@ -543,8 +662,8 @@ if __name__ == "__main__":
     meta_data_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/converted_files/70_plane_1_module_2_ext_trigger_scan_interpreted.h5'
     input_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/output/Tracks_aligned.h5'
     
-    transform_to_emu_plane(input_file, table_name = 'Tracks_DUT_0', meta_data_file = meta_data_file)
+#     transform_to_emu_plane(input_file, table_name = 'Tracks_DUT_0', meta_data_file = meta_data_file)
     
-    
-    
-    
+    plot_hw_vs_sw_timestamps('/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan_interpreted_fixed.h5',
+                       '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan_interpreted.h5')
+
