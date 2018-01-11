@@ -518,16 +518,14 @@ def open_hit_and_fixed_ts_file(input_file,meta_file):
         sw = meta_file.root.meta_data[:]
         hw = in_file.root.Hits[:]
         
-        new_array = np.zeros(shape=(hw.shape[0],3))
+        plot_data_array = np.zeros(shape=(hw.shape[0],3))
         logging.info('opening file %s' % input_file)
         logging.info('number of hits is %s' % hw.shape[0] )
-    return sw, hw, new_array
+    return sw, hw, plot_data_array
 
         
 @jit(nopython=True, parallel=True)
-def assign_hw_timestamp(sw,hw,new_array):
-
-    plot_data = new_array
+def assign_hw_timestamp(sw,hw,plot_data_array):
     
     j = 0
       
@@ -535,15 +533,15 @@ def assign_hw_timestamp(sw,hw,new_array):
         for j in range(0, hw.shape[0]):
             if sw[i]['event_number'] <= hw[j]['event_number']:
 #                 plot_data.append([sw[i]['timestamp_start'],hw[b]['trigger_time_stamp'],sw[i]['event_number'], hw[b]['event_number']])
-                plot_data[j][0] = sw[i]['timestamp_stop']
-                plot_data[j][1] = hw[j]['trigger_time_stamp']
-                plot_data[j][2] = sw[i]['event_number']
-                plot_data[j][3] = hw[j]['event_number']
+                plot_data_array[j][0] = sw[i]['timestamp_stop']
+                plot_data_array[j][1] = hw[j]['trigger_time_stamp']
+                plot_data_array[j][2] = sw[i]['event_number']
+                plot_data_array[j][3] = hw[j]['event_number']
                 
-    plot_data[:,0] = plot_data[:,0] - plot_data[:,0][0]
-    plot_data[:,1] = plot_data[:,1] *25 / 1e9
+    plot_data_array[:,0] = plot_data_array[:,0] - plot_data_array[:,0][0]
+    plot_data_array[:,1] = plot_data_array[:,1] *25 / 1e9
         
-    return plot_data
+    return plot_data_array
 
 
 
@@ -588,28 +586,22 @@ def plot_xy(x,y,title,xlabel, ylabel,xrange,yrange,output_file = None):
 def plot_hw_vs_sw_timestamps(input_file,meta_file):
     
     output_file = None #input_file[:-3] + '_sw_vs_hw_timestamp.pdf'
-    sw, hw, new_array = open_hit_and_fixed_ts_file(input_file,meta_file)
+    sw, hw, plot_data_array = open_hit_and_fixed_ts_file(input_file,meta_file)
     
     title = 'Run_' + os.path.split(input_file)[1][:11] + ' software vs. hardware timestamp'
     
-    
-    
-#     plot_xy(assign_hw_timestamp(sw,hw,new_array)[:,0],
-#             assign_hw_timestamp(sw,hw,new_array)[:,1],
+#     plot_data = assign_hw_timestamp(sw,hw,plot_data_array)
+#     plot_xy(plot_data[:,0],plot_data[:,1],
 #             title = title, xlabel = 'software ts [s]',
 #             ylabel = 'hardware ts [s]', 
 #             xrange = (0,100),yrange=(0,12),
 #             output_file = output_file)
-#     
-    
+
     result = assign_hw_timestamp_corr(sw, hw)
-#     print result[0]
-#     raise
-#     plot_data[:,0] = plot_data[:,0] - plot_data[:,0][0]
-#     plot_data[:,1] = plot_data[:,1] *25 / 1e9
 
     result[0] -= (result[0][0] + 50.)
     result[1] *= 25e-9
+
     plt.plot(result[0], result[1], '.')
     
     sel = np.logical_and(result[0] > 1, result[0] < 6)
@@ -623,11 +615,18 @@ def plot_hw_vs_sw_timestamps(input_file,meta_file):
     print np.all(np.diff(result[1]) >= 0)
     print np.where(np.diff(result[1]) == 0)
     
-    plt.plot(xp, yf(xp))
+    plt.plot(xp, yf(xp),label = 'slope = %.3f'% par[0])
     
-    plt.plot(xp,xp)
+    plt.plot(xp,xp,label = 'slope = 1')
     plt.grid()
-    plt.show()
+    plt.title(title)
+    plt.xlabel('software ts [s]')
+    plt.ylabel('hardware ts [s]')
+    plt.ylim(-0.5,2)
+    plt.xlim(0,8)
+    plt.legend()
+#     plt.show()
+    plt.savefig(input_file[:-3] + '_sw_vs_hw_timestamp_zoom.png')
    
     
 if __name__ == "__main__":
