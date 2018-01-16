@@ -257,10 +257,10 @@ if __name__ == "__main__":
 #         process_dut(raw_data_file, trigger_data_format=2)
     print 'finished first plane'
     
-    raw_data_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan.h5',
-                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_4_ext_trigger_scan.h5',
-                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_0_ext_trigger_scan.h5',
-                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_2_ext_trigger_scan.h5'
+    raw_data_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_2_ext_trigger_scan.h5',
+                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_4_ext_trigger_scan.h5',
+                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_0_ext_trigger_scan.h5',
+                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_2_ext_trigger_scan.h5'
                         ]
     
     for i, raw_data_file in enumerate(raw_data_files):

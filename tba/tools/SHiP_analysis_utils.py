@@ -18,6 +18,7 @@ from numpy import choose
 # from testbeam_analysis.tools.geometry_utils import cartesian_to_spherical
 from testbeam_analysis.tools import geometry_utils as gu
 from tqdm import tqdm
+from collections import Counter
 
 # input_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/board_10/set_trigger_delay/module_2/75_module_2_ext_trigger_scan_interpreted'
 # with tb.open_file(input_filename + '.h5', 'r+') as in_file_h5:
@@ -585,7 +586,7 @@ def plot_xy(x,y,title,xlabel, ylabel,xrange,yrange,output_file = None):
 
 def plot_hw_vs_sw_timestamps(input_file,meta_file):
     
-    output_file = None #input_file[:-3] + '_sw_vs_hw_timestamp.pdf'
+    output_file = input_file[:-3] + '_sw_vs_hw_timestamp.pdf'
     sw, hw, plot_data_array = open_hit_and_fixed_ts_file(input_file,meta_file)
     
     title = 'Run_' + os.path.split(input_file)[1][:11] + ' software vs. hardware timestamp'
@@ -598,36 +599,58 @@ def plot_hw_vs_sw_timestamps(input_file,meta_file):
 #             output_file = output_file)
 
     result = assign_hw_timestamp_corr(sw, hw)
-
-    result[0] -= (result[0][0] + 50.)
-    result[1] *= 25e-9
-
-    plt.plot(result[0], result[1], '.')
     
+    histogram_delta_t(result,output_file = input_file[:-38] + '_delta_t_histo.pdf')
+    
+    result[0] -= (1506623943.279761 +66. )#(result[0][0] + 50.)
+    result[1] *= 25e-9
+    plt.clf()
+    plt.plot(result[0], result[1], '.')
     sel = np.logical_and(result[0] > 1, result[0] < 6)
     x, y = result[0][sel], result[1][sel]
     xp = np.linspace(plt.xlim()[0], plt.xlim()[1], 1000)
-    
+     
     par = np.polyfit(x, y, 1)
-    yf = np.poly1d(par)
-    
+    yf = np.poly1d(par)    
     print par[0]
     print np.all(np.diff(result[1]) >= 0)
-    print np.where(np.diff(result[1]) == 0)
-    
     plt.plot(xp, yf(xp),label = 'slope = %.3f'% par[0])
-    
     plt.plot(xp,xp,label = 'slope = 1')
     plt.grid()
     plt.title(title)
     plt.xlabel('software ts [s]')
     plt.ylabel('hardware ts [s]')
-    plt.ylim(-0.5,2)
-    plt.xlim(0,8)
-    plt.legend()
-#     plt.show()
-    plt.savefig(input_file[:-3] + '_sw_vs_hw_timestamp_zoom.png')
+
+    plt.legend()    
+    plt.savefig(input_file[:-3] + '_sw_vs_hw_timestamp.pdf')
+    
    
+def histogram_delta_t(result,output_file=None):
+    
+    delta_t = np.diff(result[1])
+    
+    histo,edges = np.histogram(delta_t,bins = 200)
+    
+    small = delta_t[np.where((delta_t <= 2048) & (delta_t > 0))]
+    print 'entries with 0 < delta_t < 2048:'
+    print np.count_nonzero(small)
+    large = delta_t[np.where(delta_t >= 2**15)]
+    print 'entries with delta t larger 2^15 = 32786:'
+    print np.count_nonzero(large)
+    
+    plt.clf()
+    plt.grid()
+    plt.title('delta t for consecutive events')
+    plt.xlabel('delta_t [25ns]')
+    plt.ylabel('counts')
+    plt.plot(edges[1:-1],histo[1:])
+    if output_file == None:
+        plt.show()
+    else:
+        plt.savefig(output_file)
+        logging.info('histogram saved to %s' %output_file)
+    
+    
     
 if __name__ == "__main__":
 
@@ -662,7 +685,43 @@ if __name__ == "__main__":
     input_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/output/Tracks_aligned.h5'
     
 #     transform_to_emu_plane(input_file, table_name = 'Tracks_DUT_0', meta_data_file = meta_data_file)
+    pix1_files_fixed = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_2_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_4_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/54_module_0_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/54_module_2_ext_trigger_scan_interpreted_fixed.h5']
+    pix1_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_2_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_4_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/54_module_0_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/54_module_2_ext_trigger_scan_interpreted.h5'] 
+
+    pix2_files_fixed = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_4_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_0_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_2_ext_trigger_scan_interpreted_fixed.h5']
+    pix2_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_4_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_0_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_2_ext_trigger_scan_interpreted.h5']
     
-    plot_hw_vs_sw_timestamps('/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan_interpreted_fixed.h5',
-                       '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan_interpreted.h5')
+    pix3_files_fixed = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/71_module_2_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/71_module_4_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/56_module_0_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/56_module_2_ext_trigger_scan_interpreted_fixed.h5']
+    pix3_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/71_module_2_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/71_module_4_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/56_module_0_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX3/56_module_2_ext_trigger_scan_interpreted.h5']
+    
+    pix4_files_fixed = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_2_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_4_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_0_ext_trigger_scan_interpreted_fixed.h5',
+                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_2_ext_trigger_scan_interpreted_fixed.h5']
+    pix4_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_2_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_4_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_0_ext_trigger_scan_interpreted.h5',
+                  '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_2_ext_trigger_scan_interpreted.h5']
+    
+
+    for i,file in enumerate(pix2_files_fixed) :
+        plot_hw_vs_sw_timestamps(file,pix2_files[i])
 
