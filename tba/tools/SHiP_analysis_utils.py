@@ -416,12 +416,15 @@ def translate_plane_to_restframe(data_file, v_x, v_y):
 class Final_track_data(tb.IsDescription):
     region = tb.Int64Col(pos=0)
     event_number = tb.Int64Col(pos=1)
-    timestamp = tb.Float64Col(pos=2)
+    sw_timestamp = tb.Float64Col(pos=2)
     x = tb.Float64Col(pos=3)
     y = tb.Float64Col(pos=4)
     z = tb.Float64Col(pos=5)
     phi = tb.Float64Col(pos=6)
     theta = tb.Float64Col(pos=7)
+    track_chi_2 = tb.Float64Col(pos=8)
+    xerr_dut_0 = tb.Float64Col(pos=9)
+    yerr_dut_0 = tb.Float64Col(pos=9)
 #     alpha = tb.Float64Col(pos=3)
 #     beta = tb.Float64Col(pos=4)
 #     gamma = tb.Float64Col(pos=5)
@@ -468,6 +471,7 @@ def transform_to_emu_plane(input_file, table_name ,meta_data_file, output_file=N
 #             beta = np.apply_along_axis(angle_between,1,direction_vec,(0,1,0))
 #             gamma = np.apply_along_axis(angle_between,1,direction_vec,(0,0,1))
 
+            '''transformation to emulsion plane, and transformation to spherical coordinate system'''
             new_coords = gu.get_line_intersections_with_plane(line_origins=offset_vec,
                                                              line_directions=direction_vec,
                                                              position_plane=np.array([0,0,-156000]),
@@ -480,17 +484,38 @@ def transform_to_emu_plane(input_file, table_name ,meta_data_file, output_file=N
                                                 direction_vec[:,2])
 #             new_data = np.column_stack((event_number,x,y,z,phi,theta))
             descr = Final_track_data
-            dtypes = {'names': ['region','event_number', 'x', 'y', 'z', 'phi', 'theta'],
-                      'formats': ['int64','int64', 'float64', 'float64', 'float64', 'float64', 'float64']}
+            dtypes = {'names': ['region','event_number', 'sw_timestamp','x', 'y', 'z', 'phi', 'theta', 'track_chi2','xerr_dut_0','yerr_dut_0'],
+                      'formats': ['int64','int64', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64','float64','float64','float64']}
             new_data = np.zeros_like(node,
                    dtype=dtypes)
+
+            timestamps = np.zeros_like(event_number,dtype=float)
+
+            ''' assigning sw timestamps to all tracks, based on events'''
+                
+            j = 0
+            for i in range(1, event_number.shape[0]):
+                try:
+                    while meta_data[i]['event_number'] >= event_number[j]:
+                        timestamps[j] = meta_data[i-1]['timestamp_start'] # + (meta_data[i - 1]['timestamp_start']- meta_data[i - 1]['timestamp_stop']) / 2.
+                        j += 1
+                except IndexError:
+                    break
+            
+            timestamps -= timestamps[0]
+
+            ''' filling new array'''
+            
             new_data['event_number'] = event_number
+            new_data['sw_timestamp'] = timestamps
             new_data['x'] = new_coords[:,0]
             new_data['y'] = new_coords[:,1]
             new_data['z'] = new_coords[:,2]
             new_data['phi'] = phi
             new_data['theta'] = theta
-            
+            new_data['track_chi2'] = node[:]['track_chi2']
+            new_data['xerr_dut_0'] = node[:]['xerr_dut_0']
+            new_data['yerr_dut_0'] = node[:]['yerr_dut_0']
 
             new_data['region'][(new_data['event_number']>9662) & (new_data['event_number']<=14331)] = 1
             new_data['region'][(new_data['event_number']>14332) & (new_data['event_number']<=18964)] = 2
@@ -498,6 +523,8 @@ def transform_to_emu_plane(input_file, table_name ,meta_data_file, output_file=N
             new_data['region'][(new_data['event_number']>23702) & (new_data['event_number']<=28411)] = 4
             new_data['region'][(new_data['event_number']>28411)] = 5
             new_tables = []
+
+            '''finally creating and filling table for .h5 document'''
             
             new_table = out_file.create_table(where=out_file.root,
                                             name='Tracks_for_pix2',
@@ -543,7 +570,6 @@ def assign_hw_timestamp(sw,hw,plot_data_array):
     plot_data_array[:,1] = plot_data_array[:,1] *25 / 1e9
         
     return plot_data_array
-
 
 
 def assign_hw_timestamp_corr(sw, hw):
@@ -602,7 +628,7 @@ def plot_hw_vs_sw_timestamps(input_file,meta_file):
     
     histogram_delta_t(result,output_file = input_file[:-38] + '_delta_t_histo.pdf')
     
-    result[0] -= (1506623943.279761 +66. )#(result[0][0] + 50.)
+    result[0] -= (1506623943.279761 +50. )#(result[0][0] + 50.)
     result[1] *= 25e-9
     plt.clf()
     plt.plot(result[0], result[1], '.')
@@ -610,12 +636,12 @@ def plot_hw_vs_sw_timestamps(input_file,meta_file):
     x, y = result[0][sel], result[1][sel]
     xp = np.linspace(plt.xlim()[0], plt.xlim()[1], 1000)
      
-    par = np.polyfit(x, y, 1)
-    yf = np.poly1d(par)    
-    print par[0]
-    print np.all(np.diff(result[1]) >= 0)
-    plt.plot(xp, yf(xp),label = 'slope = %.3f'% par[0])
-    plt.plot(xp,xp,label = 'slope = 1')
+#     par = np.polyfit(x, y, 1)
+#     yf = np.poly1d(par)    
+#     print par[0]
+#     print np.all(np.diff(result[1]) >= 0)
+#     plt.plot(xp, yf(xp),label = 'slope = %.3f'% par[0])
+#     plt.plot(xp,xp,label = 'slope = 1')
     plt.grid()
     plt.title(title)
     plt.xlabel('software ts [s]')
@@ -684,7 +710,8 @@ if __name__ == "__main__":
     meta_data_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/converted_files/70_plane_1_module_2_ext_trigger_scan_interpreted.h5'
     input_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/output/Tracks_aligned.h5'
     
-#     transform_to_emu_plane(input_file, table_name = 'Tracks_DUT_0', meta_data_file = meta_data_file)
+    transform_to_emu_plane(input_file, table_name = 'Tracks_DUT_0', meta_data_file = meta_data_file)
+    raise
     pix1_files_fixed = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_2_ext_trigger_scan_interpreted_fixed.h5',
                         '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_4_ext_trigger_scan_interpreted_fixed.h5',
                         '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/54_module_0_ext_trigger_scan_interpreted_fixed.h5',
