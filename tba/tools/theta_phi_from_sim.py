@@ -1,4 +1,3 @@
-''' All functions acting on the hits of one DUT are listed here'''
 import numpy as np
 import tables as tb
 

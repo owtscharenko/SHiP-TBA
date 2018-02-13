@@ -20,6 +20,9 @@ from testbeam_analysis.tools import geometry_utils as gu
 from tqdm import tqdm
 from collections import Counter
 
+
+from tba import hit_analysis as ship_hit_analysis
+
 # input_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/board_10/set_trigger_delay/module_2/75_module_2_ext_trigger_scan_interpreted'
 # with tb.open_file(input_filename + '.h5', 'r+') as in_file_h5:
 #     for i in xrange(0,3):
@@ -246,6 +249,7 @@ def slice_per_spill(data_file):
         print 'number of analyzed events = %s' % len(sel_events)
 
         meta_data = []
+
         for row in data.iterrows():
             if row[0] >= sel_events[0, 0] and row[0] <= sel_events[-1, 0]:
                 meta_data.append([row[0], row[1] - data[0][1], row[2]])
@@ -258,8 +262,7 @@ def slice_per_spill(data_file):
         for i in tqdm(range(0, len(meta_data) - 1)):
             for b in range(0, len(sel_events)):
                 if sel_events[b, 0] >= meta_data[i, 0] and sel_events[b, 0] < meta_data[i + 1, 0]:
-                    timestamps.append(
-                        [meta_data[i, 2], sel_events[b, 0], sel_events[b, 1], sel_events[b, 2]])
+                    timestamps.append([meta_data[i, 2], sel_events[b, 0], sel_events[b, 1], sel_events[b, 2]])
 
         timestamps = np.array(timestamps)
 
@@ -271,7 +274,7 @@ def slice_per_spill(data_file):
 #         plt.xlim(65, 95)
         plt.plot(meta_data[:, 1], meta_data[:, 0],
                  linestyle='None', marker='o', markersize=1)
-
+#         plt.show()
         plt.savefig(data_file[:-11] + 'sliced.pdf')
 
     #     plt.clf()
@@ -424,7 +427,7 @@ class Final_track_data(tb.IsDescription):
     theta = tb.Float64Col(pos=7)
     track_chi_2 = tb.Float64Col(pos=8)
     xerr_dut_0 = tb.Float64Col(pos=9)
-    yerr_dut_0 = tb.Float64Col(pos=9)
+    yerr_dut_0 = tb.Float64Col(pos=10)
 #     alpha = tb.Float64Col(pos=3)
 #     beta = tb.Float64Col(pos=4)
 #     gamma = tb.Float64Col(pos=5)
@@ -486,8 +489,7 @@ def transform_to_emu_plane(input_file, table_name ,meta_data_file, output_file=N
             descr = Final_track_data
             dtypes = {'names': ['region','event_number', 'sw_timestamp','x', 'y', 'z', 'phi', 'theta', 'track_chi2','xerr_dut_0','yerr_dut_0'],
                       'formats': ['int64','int64', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64','float64','float64','float64']}
-            new_data = np.zeros_like(node,
-                   dtype=dtypes)
+            new_data = np.zeros_like(node,dtype=dtypes)
 
             timestamps = np.zeros_like(event_number,dtype=float)
 
@@ -557,7 +559,7 @@ def assign_hw_timestamp(sw,hw,plot_data_array):
     
     j = 0
       
-    for i in range(0, sw.shape[0]-1):
+    for i in tqdm(range(0, sw.shape[0]-1)):
         for j in range(0, hw.shape[0]):
             if sw[i]['event_number'] <= hw[j]['event_number']:
 #                 plot_data.append([sw[i]['timestamp_start'],hw[b]['trigger_time_stamp'],sw[i]['event_number'], hw[b]['event_number']])
@@ -578,7 +580,7 @@ def assign_hw_timestamp_corr(sw, hw):
     
     j = 0
       
-    for i in range(1, sw.shape[0]-1):
+    for i in tqdm(range (1, sw.shape[0]-1)):
         try:
             while sw[i]['event_number'] >= hw[j]['event_number']:
                 result[0][j] = sw[i - 1]['timestamp_start'] + (sw[i - 1]['timestamp_start']- sw[i - 1]['timestamp_stop']) / 2.
@@ -586,6 +588,8 @@ def assign_hw_timestamp_corr(sw, hw):
                 result[2][j] = sw[i - 1]['event_number']
                 result[3][j] = hw[j]['event_number']
                 j += 1
+                if result[1][j] < 0:
+                    break
         except IndexError:
             break
         
@@ -628,7 +632,7 @@ def plot_hw_vs_sw_timestamps(input_file,meta_file):
     
     histogram_delta_t(result,output_file = input_file[:-38] + '_delta_t_histo.pdf')
     
-    result[0] -= (1506623943.279761 +50. )#(result[0][0] + 50.)
+    result[0] -= result[0][0]
     result[1] *= 25e-9
     plt.clf()
     plt.plot(result[0], result[1], '.')
@@ -648,7 +652,7 @@ def plot_hw_vs_sw_timestamps(input_file,meta_file):
     plt.ylabel('hardware ts [s]')
 
     plt.legend()    
-    plt.savefig(input_file[:-3] + '_sw_vs_hw_timestamp.pdf')
+    plt.savefig(input_file[:-3] + '_sw_vs_hw_timestamp.png')
     
    
 def histogram_delta_t(result,output_file=None):
@@ -676,7 +680,87 @@ def histogram_delta_t(result,output_file=None):
         plt.savefig(output_file)
         logging.info('histogram saved to %s' %output_file)
     
+
+class ClusterInfoTable(tb.IsDescription):
+    event_number = tb.Int64Col(pos=0)
+    ID = tb.UInt16Col(pos=1)
+    n_hits = tb.UInt16Col(pos=2)
+    charge = tb.Float32Col(pos=3)
+    seed_column = tb.UInt16Col(pos=4)
+    seed_row = tb.UInt16Col(pos=5)
+    mean_column = tb.Float32Col(pos=6)
+    mean_row = tb.Float32Col(pos=7)
+    err_cols = tb.Float32Col(pos=8)
+    err_rows = tb.Float32Col(pos=9)
+    trigger_time_stamp = tb.Int64Col(pos=10)
+    sw_time_stamp = tb.Float64Col(pos=11)
     
+def add_sw_timestamp_to_cluster_file(input_cluster_file, meta_file):
+    output_file = input_cluster_file[:-3] + '_sw_timestamp.h5'
+    
+    with tb.open_file(input_cluster_file, mode="r") as in_file, tb.open_file(meta_file,mode='r') as meta_file:
+        with tb.open_file(output_file, mode="w") as out_file:
+            meta_data = meta_file.root.meta_data[:]
+            hw = in_file.root.Cluster[:]
+    
+            event_number = hw['event_number']
+            timestamps = np.zeros_like(event_number,dtype=float)
+    
+            j = 0
+            for i in range(1, event_number.shape[0]):
+                try:
+                    while meta_data[i]['event_number'] >= event_number[j]:
+                        timestamps[j] = meta_data[i-1]['timestamp_start'] # + (meta_data[i - 1]['timestamp_start']- meta_data[i - 1]['timestamp_stop']) / 2.
+                        j += 1
+                except IndexError:
+                    break
+            
+            timestamps -= timestamps[0]
+    
+            descr = ClusterInfoTable
+            dtypes = {'names': ['event_number', 'ID','n_hits','charge', 'seed_column','seed_row','mean_column', 'mean_row','err_cols', 'err_rows', 'trigger_time_stamp', 'sw_timestamp'],
+                      'formats': ['int64','uint16', 'uint16', 'float32', 'uint16', 'uint16', 'float32', 'float32','float32','float32','int64','float64']}
+    
+            new_data = np.zeros_like(hw,dtype=dtypes)
+            
+            new_data['event_number'] = hw['event_number']
+            new_data['ID'] = hw['ID']
+            new_data['n_hits'] = hw['n_hits']
+            new_data['charge'] = hw['charge']
+            new_data['seed_column'] = hw['seed_column'] 
+            new_data['seed_row'] = hw['seed_row']
+            new_data['mean_column'] = hw['mean_column']
+            new_data['mean_row'] = hw['mean_row']
+            new_data['err_cols'] = hw['err_cols']
+            new_data['err_rows'] = hw['err_rows']
+            new_data['trigger_time_stamp'] =  hw['trigger_time_stamp']
+            new_data['sw_timestamp'] = timestamps
+
+        
+            new_table = out_file.create_table(where=out_file.root,
+                                            name='Cluster_for_pix1_module_0',
+                                            description=descr,
+                                            title='Cluster with timestamps',
+                                            filters=tb.Filters(complib='blosc',
+                                                   complevel=5,
+                                                   fletcher32=False))
+
+            new_table.append(new_data)
+            new_table.flush()
+
+
+def evt_vs_time(input_file, meta_file):
+    sw, hw, plot_data_array = open_hit_and_fixed_ts_file(input_file,meta_file)
+    result = assign_hw_timestamp_corr(sw, hw)
+    
+    result[0] = result[0] - result[0][0]
+    plt.clf()
+    plt.plot(result[0][2:],result[3][2:],'.')
+    plt.grid()
+    plt.xlim(0,3000)
+    plt.show()
+    
+    return result
     
 if __name__ == "__main__":
 
@@ -707,11 +791,30 @@ if __name__ == "__main__":
 #     translate_plane_to_restframe(data_file, v[1], v_y=0)
 #     print angle_between((-0.0044927,-0.03259097,0.999458675),(0,0,1)) #*180/np.pi
 #     slice_per_spill('/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/converted_files/70_plane_1_module_2_ext_trigger_scan_interpreted')
+#     hw_array = evt_vs_time('/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/board_10/set_trigger_delay/75_module_2_ext_trigger_scan_interpreted_fixed.h5',
+#                 '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/board_10/set_trigger_delay/75_module_2_ext_trigger_scan_interpreted.h5')
+   
+    plot_hw_vs_sw_timestamps('/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/board_10/set_trigger_delay/75_module_2_ext_trigger_scan_interpreted_fixed.h5',
+                '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/board_10/set_trigger_delay/75_module_2_ext_trigger_scan_interpreted.h5')
+    raise
     meta_data_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/converted_files/70_plane_1_module_2_ext_trigger_scan_interpreted.h5'
     input_file = '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/matching_moving_module_0/pix2/output/Tracks_aligned.h5'
-    
+   
+#     ship_hit_analysis.cluster_hits_niko(input_hits_file='/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_0_ext_trigger_scan_aligned.h5',
+# #                         input_noisy_pixel_mask_file=os.path.splitext(data_file)[0] + '_noisy_pixel_mask.h5',
+#                           min_hit_charge=0,
+#                           max_hit_charge=13,
+#                           column_cluster_distance=1,
+#                           row_cluster_distance=2,
+#                           frame_cluster_distance=2,
+#                           dut_name='DUT_1')
+
+    add_sw_timestamp_to_cluster_file('/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_0_ext_trigger_scan_aligned_clustered.h5',
+                                     '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_0_ext_trigger_scan_interpreted.h5')
+
+
     transform_to_emu_plane(input_file, table_name = 'Tracks_DUT_0', meta_data_file = meta_data_file)
-    raise
+
     pix1_files_fixed = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_2_ext_trigger_scan_interpreted_fixed.h5',
                         '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_4_ext_trigger_scan_interpreted_fixed.h5',
                         '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/54_module_0_ext_trigger_scan_interpreted_fixed.h5',

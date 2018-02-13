@@ -173,7 +173,7 @@ def format_hit_table(input_file, output_file, transpose):
     logging.info('Format hit table in %s', input_file)
     with tb.open_file(input_file, 'r') as in_file_h5:
         hits = in_file_h5.root.Hits[:]
-        hits_formatted = np.zeros((hits.shape[0], ), dtype=[('event_number', np.int64), ('trigger_time_stamp',np.uint64),('frame', np.uint8), ('column', np.uint16), ('row', np.uint16), ('charge', np.uint16)])
+        hits_formatted = np.zeros((hits.shape[0], ), dtype=[('event_number', np.int64), ('trigger_time_stamp',np.int64),('frame', np.uint8), ('column', np.uint16), ('row', np.uint16), ('charge', np.uint16)])
         with tb.open_file(output_file, 'w') as out_file_h5:
             hit_table_out = out_file_h5.create_table(out_file_h5.root, name='Hits', description=hits_formatted.dtype, title='Selected FE-I4 hits for test beam analysis', filters=tb.Filters(complib='blosc', complevel=5, fletcher32=False))
             hits_formatted['event_number'] = hits['event_number']
@@ -190,6 +190,22 @@ def format_hit_table(input_file, output_file, transpose):
                 raise RuntimeError('The event number does not always increase. This data cannot be used like this!')
             hit_table_out.append(hits_formatted)
 
+class HitInfoTable(tb.IsDescription):
+    event_number = tb.Int64Col(pos=0)
+    trigger_number = tb.UInt32Col(pos=1)
+    trigger_time_stamp = tb.UInt64Col(pos=2)
+    relative_BCID = tb.UInt8Col(pos=3)
+    LVL1ID = tb.UInt16Col(pos=4)
+    column = tb.UInt8Col(pos=5)
+    row = tb.UInt16Col(pos=6)
+    tot = tb.UInt8Col(pos=7)
+    BCID = tb.UInt16Col(pos=8)
+    TDC = tb.UInt16Col(pos=9)
+    TDC_time_stamp = tb.UInt8Col(pos=10)
+    trigger_status = tb.UInt8Col(pos=11)
+    service_record = tb.UInt32Col(pos=12)
+    event_status = tb.UInt16Col(pos=13)
+
 def fix_time_stamp(hits_file_in, hits_file_out):
     ''' Fix overflow of time stamp.
      
@@ -199,9 +215,16 @@ def fix_time_stamp(hits_file_in, hits_file_out):
         node = in_file.root.Hits
          
         hits = node[:]
+        hits = hits.astype([('event_number', '<i8'), ('trigger_number', '<u4'), 
+                            ('trigger_time_stamp', '<u8'), ('relative_BCID', 'u1'), 
+                            ('LVL1ID', '<u2'), ('column', 'u1'), ('row', '<u2'), 
+                            ('tot', 'u1'), ('BCID', '<u2'), ('TDC', '<u2'), 
+                            ('TDC_time_stamp', 'u1'), ('trigger_status', 'u1'), 
+                            ('service_record', '<u4'), ('event_status', '<u2')])
+        
         with tb.open_file(hits_file_out, 'w') as out_file:
             hits_out = out_file.create_table(out_file.root, name=node.name,
-                                             description=node.dtype,
+                                             description=HitInfoTable,
                                              title=node.title,
                                              filters=tb.Filters(
                                                  complib='blosc',
@@ -209,25 +232,23 @@ def fix_time_stamp(hits_file_in, hits_file_out):
                                                  fletcher32=False))
             fix_hits(hits)
             hits_out.append(hits)
-    
-    
-@njit
-def add_offset(hits, index, offset):
-    for i in range(index, hits.shape[0]):
-        hits[i]['trigger_time_stamp'] += offset
- 
+
  
 @njit
 def fix_hits(hits):
     ''' Event number overflow at 2^15 fix '''
  
-    old_hit = hits[0]
+    old_trigger_time_stamp = hits[0]['trigger_time_stamp']
+    
+    n_overflows = 0
+    
     for i, hit in enumerate(hits):
-        if hit['trigger_time_stamp'] < old_hit['trigger_time_stamp']:
-            add_offset(hits,
-                       index=i,
-                       offset=2**15)
-        old_hit = hit
+        if hit['trigger_time_stamp'] < old_trigger_time_stamp:
+            old_trigger_time_stamp = hit['trigger_time_stamp']
+            n_overflows += 1
+
+        old_trigger_time_stamp = hit['trigger_time_stamp']
+        hit['trigger_time_stamp'] += n_overflows * 2**15
 
 
 if __name__ == "__main__":
@@ -248,28 +269,30 @@ if __name__ == "__main__":
     '''
     test run
     '''
-#     raw_data_files1 = [r'/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/board_10/set_trigger_delay/module_0/67_module_0_ext_trigger_scan.h5',
-#                       r'/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/board_10/set_trigger_delay/module_1/67_module_1_ext_trigger_scan.h5',
-#                       ]
-# 
-#     for i, raw_data_file in enumerate(raw_data_files1):
-#         transpose = False
-#         process_dut(raw_data_file, trigger_data_format=2)
+    raw_data_files1 = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/tba_improvements_branch/board_10/set_trigger_delay/96_module_2_ext_trigger_scan.h5'
+        
+#                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_0_ext_trigger_scan.h5',
+#                        '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX1/69_module_1_ext_trigger_scan.h5',
+                      ]
+ 
+    for i, raw_data_file in enumerate(raw_data_files1):
+        transpose = False
+        process_dut(raw_data_file, trigger_data_format=2)
     print 'finished first plane'
     
-    raw_data_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_2_ext_trigger_scan.h5',
-                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/72_module_4_ext_trigger_scan.h5',
-                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_0_ext_trigger_scan.h5',
-                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX4/57_module_2_ext_trigger_scan.h5'
+    raw_data_files = ['/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_2_ext_trigger_scan.h5',
+                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/70_module_4_ext_trigger_scan.h5',
+                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_0_ext_trigger_scan.h5',
+                      '/media/data/SHiP/SHiP-testbeam-September17/testbeam-analysis/PIX2/55_module_2_ext_trigger_scan.h5'
                         ]
     
-    for i, raw_data_file in enumerate(raw_data_files):
-        if i&1 == 0:
-            process_dut(raw_data_file, trigger_data_format=2,transpose=False)
-        else :
-            process_dut(raw_data_file, trigger_data_format=2,transpose=True)
-
-    print 'finished telescope'
+#     for i, raw_data_file in enumerate(raw_data_files):
+#         if i&1 == 0:
+#             process_dut(raw_data_file, trigger_data_format=2,transpose=False)
+#         else :
+#             process_dut(raw_data_file, trigger_data_format=2,transpose=True)
+# 
+#     print 'finished telescope'
     
 #     # Do separate DUT data processing in parallel. The output is a formatted hit table.
 #     pool = Pool()
